@@ -96,8 +96,8 @@ def get_all_week_data(start_date: datetime.date, end_date: datetime.date) -> pd.
     return pd.concat(all_parts, ignore_index=True)
 
 # -------------------------- 页面渲染逻辑完全不变 --------------------------
-st.set_page_config(page_title="Ozon跨境周销量波动分析看板", layout="wide")
-st.title("跨境Ozon平台 500g上下周销量波动分析看板")
+st.set_page_config(page_title="跨境周销量波动分析看板", layout="wide")
+st.title("跨境平台周销量波动分析看板")
 st.divider()
 
 # 获取全表最小最大日期
