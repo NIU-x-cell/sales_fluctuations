@@ -1,8 +1,14 @@
-# ====================== 全局配置文件 ======================
 import streamlit as st
+import os
 
-# 从Streamlit Secrets读取数据库敏感信息
-DB_SECRET = st.secrets["database"]
+# 捕获secrets读取失败，防止直接崩溃
+try:
+    DB_SECRET = st.secrets["database"]
+except Exception as e:
+    st.error(f"Secrets配置读取失败：{str(e)}")
+    st.stop()
+
+# 基础数据库参数
 DB_CONFIG = {
     "user": DB_SECRET["user"],
     "password": DB_SECRET["password"],
@@ -12,40 +18,37 @@ DB_CONFIG = {
     "charset": "utf8mb4"
 }
 
-# 超时全局常量（统一一处修改，所有地方自动同步）
-CONN_TIMEOUT = 3600
-READ_TIMEOUT = 3600
-WRITE_TIMEOUT = 3600
+# 超时常量（缩短连接超时，避免无限卡死）
+CONN_TIMEOUT = 30
+READ_TIMEOUT = 30
+WRITE_TIMEOUT = 30
 
-# SQLAlchemy SSL连接后缀（TiDB Cloud标准SSL校验）
-SSL_QUERY_SUFFIX = f"&ssl_verify_cert=true&ssl_verify_identity=true&read_timeout={READ_TIMEOUT}&write_timeout={WRITE_TIMEOUT}"
-
-# 带SSL+超时完整连接配置（pymysql使用）
-# 线上环境读取CA证书路径，本地关闭证书校验避免报错
-if "ca_path" in DB_SECRET:
-    DB_FULL_CONFIG = {
-        **DB_CONFIG,
-        "connect_timeout": CONN_TIMEOUT,
-        "read_timeout": READ_TIMEOUT,
-        "write_timeout": WRITE_TIMEOUT,
-        "ssl": {
-            "ca": DB_SECRET["ca_path"],
-            "verify_cert": True
-        }
+# SSL证书兼容判断：文件存在才启用ca校验，否则关闭ssl验证
+ssl_param = {}
+if "ca_path" in DB_SECRET and os.path.isfile(DB_SECRET["ca_path"]):
+    ssl_param["ssl"] = {
+        "ca": DB_SECRET["ca_path"],
+        "verify_cert": True
     }
 else:
-    # 本地开发降级兼容
-    DB_FULL_CONFIG = {
-        **DB_CONFIG,
-        "connect_timeout": CONN_TIMEOUT,
-        "read_timeout": READ_TIMEOUT,
-        "write_timeout": WRITE_TIMEOUT,
-        "ssl": {"verify_cert": False}
-    }
+    ssl_param["ssl"] = {"verify_cert": False}
 
-# Excel存放根目录（修改成本地真实路径）
+# 完整pymysql连接参数
+DB_FULL_CONFIG = {
+    **DB_CONFIG,
+    "connect_timeout": CONN_TIMEOUT,
+    "read_timeout": READ_TIMEOUT,
+    "write_timeout": WRITE_TIMEOUT,
+    **ssl_param
+}
+
+# 全局表名
+TABLE_ORDER_ALL = "order_all"
+TABLE_WEEK_STAT = "weekly_sales_stat"
+INSERT_BATCH_SIZE = 5000
+
+# 本地Excel路径（线上无用，保留不影响）
 EXCEL_FOLDER = r"D:/pycharm/sales_fluctuations/不同克重货物销量分析"
-# 所有月份Excel文件名列表
 EXCEL_FILES = [
     "订单物流渠道分类202601.xlsx",
     "订单物流渠道分类202602.xlsx",
@@ -55,8 +58,3 @@ EXCEL_FILES = [
     "订单物流渠道分类202606.xlsx",
     "订单物流渠道分类202607.xlsx"
 ]
-# 数据库表名统一配置
-TABLE_ORDER_ALL = "order_all"
-TABLE_WEEK_STAT = "weekly_sales_stat"
-# 入库批次大小（提速关键）
-INSERT_BATCH_SIZE = 5000
