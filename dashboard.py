@@ -1,4 +1,4 @@
-# 第一行强制页面配置
+# 第一行必须是import streamlit+set_page_config，线上卡死头号元凶修复
 import streamlit as st
 st.set_page_config(page_title="Ozon跨境周销量波动看板", layout="wide")
 
@@ -8,32 +8,28 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from config import DB_FULL_CONFIG, TABLE_WEEK_STAT
 
-# 缓存查询，缩短超时时间，捕获所有数据库异常
+# 缓存周表数据，增加异常捕获，线上不会无限加载
 @st.cache_data(ttl=1800, show_spinner="加载周统计数据...")
 def load_week_data():
     try:
         conn = pymysql.connect(**DB_FULL_CONFIG)
-        # 只查询必要字段，不读取全表冗余数据
-        sql = f"SELECT stat_week, weight_type, total_orders, total_sales FROM {TABLE_WEEK_STAT} ORDER BY stat_week;"
-        df = pd.read_sql(sql, conn)
+        df = pd.read_sql(f"SELECT stat_week, weight_type, total_orders, total_sales FROM {TABLE_WEEK_STAT} ORDER BY stat_week;", conn)
         conn.close()
-        # 日期清洗
+        # 日期容错清洗
         df["stat_week"] = pd.to_datetime(df["stat_week"], errors="coerce")
         df = df.dropna(subset=["stat_week"])
-        st.success(f"数据库读取成功，共加载 {len(df)} 条周统计数据")
         return df
     except Exception as err:
-        st.error(f"数据库连接/查询失败：{str(err)}")
+        st.error(f"数据库连接失败：{str(err)}")
         return pd.DataFrame()
 
-# 页面标题
 st.title("跨境Ozon平台 500g上下周销量波动分析看板")
 st.divider()
 
-# 加载数据
+# 读取预聚合周表（带缓存）
 df_all = load_week_data()
 if df_all.empty:
-    st.warning("周统计表无数据，请先执行统计生成脚本")
+    st.error("周统计表无数据，请先运行clean_data.py生成统计数据")
 else:
     min_date = df_all["stat_week"].min()
     max_date = df_all["stat_week"].max()
@@ -45,10 +41,10 @@ else:
             "选择统计日期区间",
             value=(min_date, max_date),
             min_value=min_date,
-            max_value=max_date
+            max_date=max_date
         )
 
-    # 筛选数据
+    # 筛选区间数据
     start_pd = pd.to_datetime(start_dt)
     end_pd = pd.to_datetime(end_dt)
     df_filter = df_all[(df_all["stat_week"] >= start_pd) & (df_all["stat_week"] <= end_pd)]
@@ -57,11 +53,11 @@ else:
     df_below = df_filter[df_filter["weight_type"] == "below500"].sort_values("stat_week")
     df_over = df_filter[df_filter["weight_type"] == "over500"].sort_values("stat_week")
 
-    # 动态区间均值
+    # 动态计算筛选区间内真实周均值
     avg_below = df_below["total_orders"].sum() / len(df_below) if len(df_below) > 0 else 0
     avg_over = df_over["total_orders"].sum() / len(df_over) if len(df_over) > 0 else 0
 
-    # 双独立折线子图
+    # 创建2行1列独立画布，垂直拆分
     fig = make_subplots(
         rows=2, cols=1,
         subplot_titles=(
@@ -71,7 +67,7 @@ else:
         vertical_spacing=0.18
     )
 
-    # 轻货曲线
+    # 上图：轻货 below500
     if not df_below.empty:
         fig.add_trace(go.Scatter(
             x=df_below["stat_week"],
@@ -92,7 +88,7 @@ else:
         )
         fig.update_yaxes(title_text="周工单订单数", row=1, col=1)
 
-    # 重货曲线
+    # 下图：重货 over500
     if not df_over.empty:
         fig.add_trace(go.Scatter(
             x=df_over["stat_week"],
@@ -113,7 +109,7 @@ else:
         )
         fig.update_yaxes(title_text="周工单订单数", row=2, col=1)
 
-    # 图表布局
+    # 统一全局布局配置
     fig.update_layout(
         height=800,
         xaxis={"tickangle": -45, "nticks": 35, "automargin": True},
@@ -125,7 +121,7 @@ else:
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # 汇总指标卡片
+    # 汇总指标
     st.divider()
     st.subheader("当前筛选区间汇总统计")
     col1, col2 = st.columns(2)
