@@ -1,3 +1,2 @@
-[server]
 [app]
-dependency_installer = "uv"
+dependency_installer = "pip"
