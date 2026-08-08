@@ -1,0 +1,3 @@
+[server]
+[app]
+dependency_installer = "uv"
